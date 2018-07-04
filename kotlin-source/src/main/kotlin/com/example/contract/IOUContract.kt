@@ -19,7 +19,7 @@ import net.corda.core.transactions.LedgerTransaction
  *
  * All contracts must sub-class the [Contract] interface.
  */
-open class IOUContract : Contract {
+open class IOUContract : Contract { //SIEMPRE IMPLEMENTA LA INTERFAZ 'Contract'
     companion object {
         @JvmStatic
         val IOU_CONTRACT_ID = "com.example.contract.IOUContract"
@@ -31,7 +31,8 @@ open class IOUContract : Contract {
      */
     override fun verify(tx: LedgerTransaction) {
         val command = tx.commands.requireSingleCommand<Commands.Create>()
-        requireThat {
+
+        requireThat { //Aqui se insertan todas las reglas necesarias para considerar valida la transaccion
             // Generic constraints around the IOU transaction.
             "No inputs should be consumed when issuing an IOU." using (tx.inputs.isEmpty())
             "Only one output state should be created." using (tx.outputs.size == 1)
@@ -40,7 +41,10 @@ open class IOUContract : Contract {
             "All of the participants must be signers." using (command.signers.containsAll(out.participants.map { it.owningKey }))
 
             // IOU-specific constraints.
-            "The IOU's value must be non-negative." using (out.value > 0)
+            "The IOU's value must be non-negative." using (out.value.quantity > 0)
+            // Constraint to only allow issuance of IOUs in GBP, USD or EUR.
+            print(out.value.token.toString())
+            "The IOU's issuance must be GBP, USD or EUR." using (listOf("GBP","USD","EUR").contains(out.value.token.toString()))
         }
     }
 

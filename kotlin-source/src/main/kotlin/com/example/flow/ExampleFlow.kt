@@ -6,6 +6,7 @@ import com.example.contract.IOUContract.Companion.IOU_CONTRACT_ID
 import com.example.flow.ExampleFlow.Acceptor
 import com.example.flow.ExampleFlow.Initiator
 import com.example.state.IOUState
+import net.corda.core.contracts.Amount
 import net.corda.core.contracts.Command
 import net.corda.core.contracts.requireThat
 import net.corda.core.flows.*
@@ -14,6 +15,7 @@ import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
 import net.corda.core.utilities.ProgressTracker.Step
+import java.util.*
 
 /**
  * This flow allows two parties (the [Initiator] and the [Acceptor]) to come to an agreement about the IOU encapsulated
@@ -29,7 +31,7 @@ import net.corda.core.utilities.ProgressTracker.Step
 object ExampleFlow {
     @InitiatingFlow
     @StartableByRPC
-    class Initiator(val iouValue: Int,
+    class Initiator(val iouValue: Amount<Currency>,
                     val otherParty: Party) : FlowLogic<SignedTransaction>() {
         /**
          * The progress tracker checkpoints each stage of the flow and outputs the specified messages when each
@@ -47,7 +49,8 @@ object ExampleFlow {
                 override fun childProgressTracker() = FinalityFlow.tracker()
             }
 
-            fun tracker() = ProgressTracker(
+            //Function expression (del companion object) que llama al metodo 'ProgressTracker'
+            fun tracker() = ProgressTracker( //La funcion ProgressTracker define un conjunto de steps que representan una operacion
                     GENERATING_TRANSACTION,
                     VERIFYING_TRANSACTION,
                     SIGNING_TRANSACTION,
@@ -56,7 +59,7 @@ object ExampleFlow {
             )
         }
 
-        override val progressTracker = tracker()
+        override val progressTracker = tracker() //Creo una variable con el constructor de la funcion tracker definida en el companion object
 
         /**
          * The flow logic is encapsulated within the call() method.
@@ -107,7 +110,11 @@ object ExampleFlow {
                     val output = stx.tx.outputs.single().data
                     "This must be an IOU transaction." using (output is IOUState)
                     val iou = output as IOUState
-                    "I won't accept IOUs with a value over 100." using (iou.value <= 100)
+                    "I won't accept IOUs with a value over 100." using (iou.value.quantity <= 100)
+
+                    //Incluyo aqui mi propia regla para el flujo
+                    val ioulimit = output as IOUState
+                    "No se aceptan IOUs con un valor inferior a 10!" using (ioulimit.value.quantity >= 10)
                 }
             }
 

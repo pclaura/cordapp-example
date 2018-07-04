@@ -2,6 +2,7 @@ package com.example.api
 
 import com.example.flow.ExampleFlow.Initiator
 import com.example.state.IOUState
+import net.corda.core.contracts.Amount
 import net.corda.core.identity.CordaX500Name
 import net.corda.core.messaging.CordaRPCOps
 import net.corda.core.messaging.startTrackedFlow
@@ -9,6 +10,8 @@ import net.corda.core.messaging.vaultQueryBy
 import net.corda.core.utilities.getOrThrow
 import net.corda.core.utilities.loggerFor
 import org.slf4j.Logger
+import java.math.BigDecimal
+import java.util.*
 import javax.ws.rs.*
 import javax.ws.rs.core.MediaType
 import javax.ws.rs.core.Response
@@ -70,10 +73,8 @@ class ExampleApi(private val rpcOps: CordaRPCOps) {
      */
     @PUT
     @Path("create-iou")
-    fun createIOU(@QueryParam("iouValue") iouValue: Int, @QueryParam("partyName") partyName: CordaX500Name?): Response {
-        if (iouValue <= 0 ) {
-            return Response.status(BAD_REQUEST).entity("Query parameter 'iouValue' must be non-negative.\n").build()
-        }
+    fun createIOU(@QueryParam("iouValue") iouValue: Amount<Currency>, @QueryParam("partyName") partyName: CordaX500Name?): Response {
+
         if (partyName == null) {
             return Response.status(BAD_REQUEST).entity("Query parameter 'partyName' missing or has wrong format.\n").build()
         }

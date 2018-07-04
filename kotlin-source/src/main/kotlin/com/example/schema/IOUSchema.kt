@@ -15,7 +15,7 @@ object IOUSchema
 /**
  * An IOUState schema.
  */
-object IOUSchemaV1 : MappedSchema(
+object IOUSchemaV1 : MappedSchema( //Constructor
         schemaFamily = IOUSchema.javaClass,
         version = 1,
         mappedTypes = listOf(PersistentIOU::class.java)) {
