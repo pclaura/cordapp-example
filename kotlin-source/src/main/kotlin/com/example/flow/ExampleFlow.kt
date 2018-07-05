@@ -113,8 +113,8 @@ object ExampleFlow {
                     "I won't accept IOUs with a value over 100." using (iou.value.quantity <= 100)
 
                     //Incluyo aqui mi propia regla para el flujo
-                    val ioulimit = output as IOUState
-                    "No se aceptan IOUs con un valor inferior a 10!" using (ioulimit.value.quantity >= 10)
+                    //val ioulimit = output as IOUState
+                    //"No se aceptan IOUs con un valor inferior a 10!" using (ioulimit.value.quantity >= 10)
                 }
             }
 
