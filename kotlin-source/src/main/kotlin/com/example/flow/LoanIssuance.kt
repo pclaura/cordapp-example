@@ -18,7 +18,7 @@ object LoanIssuance {
     @InitiatingFlow
     @StartableByRPC
     class InitiatorFlow(val borrowedAmount: Amount<Currency>,
-                        val ir: BigDecimal,
+                        val iR: BigDecimal,
                         val otherParty: Party
                         ): FlowLogic<SignedTransaction>() {
 
@@ -40,7 +40,7 @@ object LoanIssuance {
                     GATHERING_SIGS,
                     FINALISING_TRANSACTION
             )
-        }//Close companion object
+        }
 
 
         override val progressTracker = tracker()
@@ -56,7 +56,8 @@ object LoanIssuance {
             // Stage 1.
             progressTracker.currentStep = GENERATING_TRANSACTION
             // Generate an unsigned transaction.
-            val loanState = LoanState(borrowedAmount,ir,serviceHub.myInfo.legalIdentities.first(), otherParty) //The State
+            // When a loan is issued the payoff amount is 0
+            val loanState = LoanState(borrowedAmount,iR, Amount.zero(borrowedAmount.token),serviceHub.myInfo.legalIdentities.first(), otherParty) //The State
             val txCommand = Command(LoanContract.Commands.Issue(), loanState.participants.map { it.owningKey }) //Command: Issue
             val txBuilder = TransactionBuilder(notary) //Tx builder
                     .addOutputState(loanState, LoanContract.LOANCONTRACT_CONTRACT_ID)
@@ -76,14 +77,14 @@ object LoanIssuance {
             progressTracker.currentStep = GATHERING_SIGS
             // Send the state to the counterparty, and receive it back with their signature.
 
-            val requiredSignatureFlowSessions = listOf(
+            val requiredSignatureFlowSessions = listOf( //The required signatures
                     loanState.borrower,
                     loanState.lender)
                     .filter { !serviceHub.myInfo.legalIdentities.contains(it) }
                     .distinct()
                     .map { initiateFlow(serviceHub.identityService.requireWellKnownPartyFromAnonymous(it)) }
 
-            val fullySignedTx = subFlow(CollectSignaturesFlow(
+            val fullySignedTx = subFlow(CollectSignaturesFlow( //Gathering them
                     partSignedTx,
                     requiredSignatureFlowSessions,
                     GATHERING_SIGS.childProgressTracker()))
@@ -91,10 +92,10 @@ object LoanIssuance {
             // Stage 5.
             progressTracker.currentStep = FINALISING_TRANSACTION
             // Notarise and record the transaction in both parties' vaults.
-            return subFlow(FinalityFlow(fullySignedTx, LoanIssuance.InitiatorFlow.Companion.FINALISING_TRANSACTION.childProgressTracker()))
-        }//Close call function
+            return subFlow(FinalityFlow(fullySignedTx, FINALISING_TRANSACTION.childProgressTracker()))
+        }
 
-    }//Close InitiatorFlow
+    }
 
 
     @InitiatedBy(InitiatorFlow::class)

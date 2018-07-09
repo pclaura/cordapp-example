@@ -18,14 +18,19 @@ class LoanContractTests {
     private val ledgerServices = MockServices()
     private val megaCorp = TestIdentity(CordaX500Name("MegaCorp", "London", "GB"))
     private val miniCorp = TestIdentity(CordaX500Name("MiniCorp", "New York", "US"))
+
     private val value: Amount<Currency> get() = Amount(1, Currency.getInstance("GBP"))
     private val value2: Amount<Currency> get() = Amount(1, Currency.getInstance("RUB"))
-    private val iR: BigDecimal = BigDecimal(1)
-    private val iR2: BigDecimal = BigDecimal(-1)
-    private val remain: Amount<Currency> get() = Amount(10, Currency.getInstance("GBP"))
-    private val remain2: Amount<Currency> get() = Amount(20, Currency.getInstance("GBP"))
     private val value3: Amount<Currency> get() = Amount(10, Currency.getInstance("GBP"))
-    private val value4: Amount<Currency> get() = Amount(0, Currency.getInstance("GBP"))
+    private val value4: Amount<Currency> get() = Amount(100, Currency.getInstance("GBP"))
+
+    private val iR: BigDecimal = BigDecimal(1.25)
+
+    private val payedOff: Amount<Currency> get() = Amount(10, Currency.getInstance("GBP"))
+    private val payedOff2: Amount<Currency> get() = Amount(20, Currency.getInstance("RUB"))
+    private val payedOff3: Amount<Currency> get() = Amount(1, Currency.getInstance("EUR"))
+    private val payedOff4: Amount<Currency> get() = Amount(125, Currency.getInstance("GBP"))
+
 
 
     @Test
@@ -33,7 +38,7 @@ class LoanContractTests {
 
         ledgerServices.ledger {
             transaction {
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, miniCorp.party, megaCorp.party))
+                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, payedOff, miniCorp.party, megaCorp.party))
                 fails()
                 command(listOf(megaCorp.publicKey, miniCorp.publicKey), LoanContract.Commands.Issue())
                 verifies()
@@ -41,13 +46,13 @@ class LoanContractTests {
         }
     }
 
+
     @Test
     fun `transaction must include Settle command`() {
 
         ledgerServices.ledger {
             transaction {
-                input(LOANCONTRACT_CONTRACT_ID, LoanPaymentState(value3, iR, remain, miniCorp.party, megaCorp.party))
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value4, iR, miniCorp.party, megaCorp.party))
+                input(LOANCONTRACT_CONTRACT_ID, LoanState(value4, iR, payedOff4,miniCorp.party, megaCorp.party))
                 fails()
                 command(listOf(megaCorp.publicKey, miniCorp.publicKey), LoanContract.Commands.Settle())
                 verifies()
@@ -55,26 +60,27 @@ class LoanContractTests {
         }
     }
 
-    @Test
+
+    /*@Test TODO: add a LoanPayment output
     fun `transaction must have no inputs`() {
 
         ledgerServices.ledger {
             transaction {
-                input(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, miniCorp.party, megaCorp.party))
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, miniCorp.party, megaCorp.party))
+                input(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, payedOff, miniCorp.party, megaCorp.party))
+                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, payedOff, miniCorp.party, megaCorp.party))
                 command(listOf(megaCorp.publicKey, miniCorp.publicKey), LoanContract.Commands.Issue())
                 `fails with`("No inputs should be consumed when issuing a LOAN.")
             }
         }
-    }
+    }*/
 
     @Test
     fun `transaction must have no two outputs`(){
 
         ledgerServices.ledger {
             transaction{
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, miniCorp.party, megaCorp.party))
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, miniCorp.party, megaCorp.party))
+                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, payedOff, miniCorp.party, megaCorp.party))
+                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, payedOff, miniCorp.party, megaCorp.party))
                 command(listOf(megaCorp.publicKey, miniCorp.publicKey), LoanContract.Commands.Issue())
                 `fails with`("Only one output state should be created.")
 
@@ -86,7 +92,7 @@ class LoanContractTests {
     fun `Lender and borrower cannot be the same`(){
         ledgerServices.ledger {
             transaction{
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, miniCorp.party, miniCorp.party))
+                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, payedOff, miniCorp.party, miniCorp.party))
                 command(listOf(megaCorp.publicKey, miniCorp.publicKey), LoanContract.Commands.Issue())
                 `fails with`("The lender and the borrower cannot be the same entity.")
             }
@@ -98,59 +104,56 @@ class LoanContractTests {
     fun `All parties must be signers`(){
         ledgerServices.ledger{
             transaction {
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, miniCorp.party, megaCorp.party))
-                command(megaCorp.publicKey, LoanContract.Commands.Issue())
+                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, payedOff, miniCorp.party, megaCorp.party))
+                command(megaCorp.publicKey, LoanContract.Commands.Issue()) //Only one signature here (megaCorp)
                 `fails with`("All of the participants must be signers.")
             }
         }
     }
 
+
     @Test
-    fun `Interest Rate must not be negative`(){
+    fun `Currencies allowed are GBP, USD and EUR (borrowed amount)`(){
         ledgerServices.ledger {
             transaction {
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR2, miniCorp.party, megaCorp.party))
+                output(LOANCONTRACT_CONTRACT_ID, LoanState(value2, iR, payedOff, miniCorp.party, megaCorp.party))
                 command(listOf(megaCorp.publicKey,miniCorp.publicKey),LoanContract.Commands.Issue())
-                `fails with`("The interest must be non-negative.")
+                `fails with`("The LOAN's borrowed amount must be GBP, USD or EUR.")
             }
         }
     }
 
     @Test
-    fun `Currencies allowed are GBP, USD and EUR`(){
+    fun `Currencies allowed are GBP, USD and EUR (payoff amount)`(){
         ledgerServices.ledger {
             transaction {
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value2, iR, miniCorp.party, megaCorp.party))
+                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, payedOff2, miniCorp.party, megaCorp.party))
                 command(listOf(megaCorp.publicKey,miniCorp.publicKey),LoanContract.Commands.Issue())
-                `fails with`("The IOU's issuance must be GBP, USD or EUR.")
-            }
-        }
-    }
-
-
-    @Test
-    fun `Payment value must be equal to the remain quantity`(){
-        ledgerServices.ledger {
-            transaction {
-                input(LOANCONTRACT_CONTRACT_ID, LoanPaymentState(value3, iR, remain2, miniCorp.party, megaCorp.party))
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value4, iR, miniCorp.party, megaCorp.party))
-                command(listOf(megaCorp.publicKey,miniCorp.publicKey),LoanContract.Commands.Settle())
-                `fails with`("The value must be equal to the remain loan.")
+                `fails with`("The LOAN's payoff amount must be GBP, USD or EUR.")
             }
         }
     }
 
     @Test
-    fun `The value of the output loan must be 0`(){
+    fun `Borrowed and payoff amount are in the same currency`(){
         ledgerServices.ledger {
             transaction {
-                input(LOANCONTRACT_CONTRACT_ID, LoanPaymentState(value3, iR, remain, miniCorp.party, megaCorp.party))
-                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, miniCorp.party, megaCorp.party))
-                command(listOf(megaCorp.publicKey,miniCorp.publicKey),LoanContract.Commands.Settle())
-                `fails with`("The value of the output loan must be 0.")
+                output(LOANCONTRACT_CONTRACT_ID, LoanState(value, iR, payedOff3, miniCorp.party, megaCorp.party))
+                command(listOf(megaCorp.publicKey,miniCorp.publicKey),LoanContract.Commands.Issue())
+                `fails with`("The LOAN's borrowed and payoff amount must be in the same currency.")
             }
         }
     }
 
+    @Test
+    fun `Payoff amount equals to repayment amount`(){
+        ledgerServices.ledger {
+            transaction {
+                input(LOANCONTRACT_CONTRACT_ID, LoanState(value4, iR, payedOff, miniCorp.party, megaCorp.party))
+                command(listOf(megaCorp.publicKey,miniCorp.publicKey),LoanContract.Commands.Settle())
+                `fails with`("The repayment amount and the payoff must be the same.")
+            }
+        }
+    }
 
 }

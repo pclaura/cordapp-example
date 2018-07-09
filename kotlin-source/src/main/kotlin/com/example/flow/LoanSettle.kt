@@ -3,27 +3,26 @@ package com.example.flow
 import co.paralleluniverse.fibers.Suspendable
 import com.example.contract.LoanContract
 import com.example.state.LoanState
-import net.corda.core.contracts.Amount
 import net.corda.core.contracts.Command
-import net.corda.core.contracts.Requirements.using
+import net.corda.core.contracts.UniqueIdentifier
 import net.corda.core.contracts.requireThat
 import net.corda.core.flows.*
 import net.corda.core.identity.Party
+import net.corda.core.node.services.queryBy
+import net.corda.core.node.services.vault.QueryCriteria
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
-import java.math.BigDecimal
-import java.util.*
 
 object LoanSettle {
+
     @InitiatingFlow
     @StartableByRPC
-    class InitiatorFlow(val borrowedAmount: Amount<Currency>,
-                        val ir: BigDecimal,
+    class InitiatorFlow(val loanID: UniqueIdentifier,
                         val otherParty: Party
     ) : FlowLogic<SignedTransaction>() {
         companion object {
-            object GENERATING_TRANSACTION : ProgressTracker.Step("Generating transaction based on a new LOAN.")
+            object GENERATING_TRANSACTION : ProgressTracker.Step("Generating transaction based on an input LOAN.")
             object VERIFYING_TRANSACTION : ProgressTracker.Step("Verifying contract constraints.")
             object SIGNING_TRANSACTION : ProgressTracker.Step("Signing transaction with our private key.")
             object GATHERING_SIGS : ProgressTracker.Step("Gathering the counterparty's signature.") {
@@ -41,69 +40,75 @@ object LoanSettle {
                     GATHERING_SIGS,
                     FINALISING_TRANSACTION
             )
-        }//Close companion object
-        override val progressTracker = LoanSettle.InitiatorFlow.tracker()
+        }
 
-        /** Flow logic
-         *
-         */
+        override val progressTracker = tracker()
+
         @Suspendable
         override fun call(): SignedTransaction {
             // Obtain a reference to the notary we want to use.
             val notary = serviceHub.networkMapCache.notaryIdentities[0]
 
             // Stage 1.
-            progressTracker.currentStep = LoanSettle.InitiatorFlow.Companion.GENERATING_TRANSACTION
+            progressTracker.currentStep = GENERATING_TRANSACTION
             // Generate an unsigned transaction.
-            val loanState = LoanState(borrowedAmount,ir,serviceHub.myInfo.legalIdentities.first(), otherParty) //The State
-            val txCommand = Command(LoanContract.Commands.Settle(), loanState.participants.map { it.owningKey }) //Command: Settle
+
+            //Get the input loan State (with a specific id) from the vault
+            val criteria = QueryCriteria.LinearStateQueryCriteria(linearId = listOf(loanID)) //Set the criteria
+            val result = serviceHub.vaultService.queryBy<LoanState>(criteria) //get the Loan State with the id specified
+            val states = result.states
+            val inLoan = states.single().state.data //Get the data
+
+            val txCommandLoanSettle = Command(LoanContract.Commands.Settle(),inLoan.participants.map{it.owningKey})
+
             val txBuilder = TransactionBuilder(notary) //Tx builder
-                    .addOutputState(loanState, LoanContract.LOANCONTRACT_CONTRACT_ID)
-                    .addCommand(txCommand)
+
+                    .addInputState(states.single())
+                    .addCommand(txCommandLoanSettle)
+
 
             // Stage 2.
-            progressTracker.currentStep = LoanSettle.InitiatorFlow.Companion.VERIFYING_TRANSACTION
+            progressTracker.currentStep = VERIFYING_TRANSACTION
             // Verify that the transaction is valid.
             txBuilder.verify(serviceHub)
 
             // Stage 3.
-            progressTracker.currentStep = LoanSettle.InitiatorFlow.Companion.SIGNING_TRANSACTION
+            progressTracker.currentStep = SIGNING_TRANSACTION
             // Sign the transaction.
             val partSignedTx = serviceHub.signInitialTransaction(txBuilder)
 
             // Stage 4.
-            progressTracker.currentStep = LoanSettle.InitiatorFlow.Companion.GATHERING_SIGS
+            progressTracker.currentStep = GATHERING_SIGS
             // Send the state to the counterparty, and receive it back with their signature.
 
-            val requiredSignatureFlowSessions = listOf(
-                    loanState.borrower,
-                    loanState.lender)
+            val requiredSignatureFlowSessions = listOf( //The required signatures
+                    inLoan.borrower,
+                    inLoan.lender)
                     .filter { !serviceHub.myInfo.legalIdentities.contains(it) }
                     .distinct()
                     .map { initiateFlow(serviceHub.identityService.requireWellKnownPartyFromAnonymous(it)) }
 
-            val fullySignedTx = subFlow(CollectSignaturesFlow(
+            val fullySignedTx = subFlow(CollectSignaturesFlow( //Gathering them
                     partSignedTx,
                     requiredSignatureFlowSessions,
-                    LoanSettle.InitiatorFlow.Companion.GATHERING_SIGS.childProgressTracker()))
+                    GATHERING_SIGS.childProgressTracker()))
 
             // Stage 5.
-            progressTracker.currentStep = LoanSettle.InitiatorFlow.Companion.FINALISING_TRANSACTION
+            progressTracker.currentStep = FINALISING_TRANSACTION
             // Notarise and record the transaction in both parties' vaults.
-            return subFlow(FinalityFlow(fullySignedTx, LoanSettle.InitiatorFlow.Companion.FINALISING_TRANSACTION.childProgressTracker()))
+            return subFlow(FinalityFlow(fullySignedTx, FINALISING_TRANSACTION.childProgressTracker()))
         }//Close call function
 
     }//Close InitiatorFlow
 
-
-    @InitiatedBy(LoanSettle.InitiatorFlow::class)
-    class Acceptor(val otherPartyFlow: FlowSession) : FlowLogic<SignedTransaction>() {
+    @InitiatedBy(InitiatorFlow::class)
+    class Acceptor(val otherPartyFlow: FlowSession) : FlowLogic<SignedTransaction>(){
         @Suspendable
         override fun call(): SignedTransaction {
-            val signTransactionFlow = object : SignTransactionFlow(otherPartyFlow) {
-                override fun checkTransaction(stx: SignedTransaction) = requireThat {
-                    val output = stx.tx.outputs.single().data
-                    "This must be a LOAN transaction." using (output is LoanState)
+            val signTransactionFlow = object : SignTransactionFlow(otherPartyFlow){
+                override fun checkTransaction(stx: SignedTransaction) = requireThat{
+                    val outLoan = stx.tx.outputs
+                    "Not outputs." using (outLoan.isEmpty())
                 }
             }
 

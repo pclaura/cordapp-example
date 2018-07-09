@@ -11,7 +11,7 @@ open class LoanPaymentContract : Contract{
 
     companion object {
         @JvmStatic
-        val LOANPAYMENTCONTRACT_CONTRACT_ID = "com.example.contract.LoanPaymentContract" //Se usa en el test
+        val LOANPAYMENTCONTRACT_CONTRACT_ID = "com.example.contract.LoanPaymentContract"
     }
 
 
@@ -23,26 +23,40 @@ open class LoanPaymentContract : Contract{
 
         val commandIssue = tx.commands.requireSingleCommand<Commands.Issue>()
 
-        requireThat { //Aqui se insertan todas las reglas necesarias para considerar valida la transaccion
+        requireThat {
             // Generic constraints around the IOU transaction.
             "Only one input state should be consumed." using (tx.inputs.size == 1)
-            "Only one output state should be created." using (tx.outputs.size == 1)
+            "Two output states should be created." using (tx.outputs.size == 2)
 
-            val inLoan = tx.inputsOfType<LoanPaymentState>().single()
+            val inLoan = tx.inputsOfType<LoanState>().single()
+            val outLoanPayment = tx.outputsOfType<LoanPaymentState>().single()
             val outLoan = tx.outputsOfType<LoanState>().single()
 
-            "The lender and the borrower cannot be the same entity." using (inLoan.lender != inLoan.borrower)
-            "All of the participants must be signers." using (commandIssue.signers.containsAll(inLoan.participants.map { it.owningKey }))
 
-            // IOU-specific constraints.
-            "The interest must be non-negative." using (inLoan.interestRate.toLong() >= 0)
+            "The lender and the borrower cannot be the same entity." using (outLoanPayment.lender != outLoanPayment.borrower)
 
-            "The loan payment must be GBP, USD or EUR." using (listOf("GBP","USD","EUR").contains(inLoan.payment.token.toString()))
+            // Check all participants are signers
+            "All of the participants must be signers." using (commandIssue.signers.containsAll(outLoanPayment.participants.map { it.owningKey }))
+
+            //Check the output Loan Payment values
+            "The borrower must not change." using (inLoan.borrower == outLoanPayment.borrower)
+            "The lender must not change." using (inLoan.lender == outLoanPayment.lender)
+
+            // Loan Payment specific constraints.
+            "The loan payment must be GBP, USD or EUR." using (listOf("GBP","USD","EUR").contains(outLoanPayment.payment.token.toString()))
+            "Loan payments must be made in the same currency as the loan." using (outLoanPayment.payment.token.toString() == inLoan.borrowedAmount.token.toString())
+            "Loan payments cannot exceed the loan quantity." using (outLoanPayment.payment.quantity <= inLoan.repaymentAmount.quantity)
 
 
-            "Loan payments must be made in the same currency as the loan." using (inLoan.payment.token.toString() == outLoan.borrowedAmount.token.toString())
+            // Check all participants are signers
+            "All of the participants must be signers." using (commandIssue.signers.containsAll(outLoan.participants.map { it.owningKey }))
 
-            "Loan payments cannot exceed the remain quantity." using (inLoan.repaymentAmount.quantity <= inLoan.remain.quantity)
+            //Check the output Loan values
+            "The borrower must not change." using (inLoan.borrower == outLoan.borrower)
+            "The lender must not change." using (inLoan.lender == outLoan.lender)
+            "The interest rate must not change." using (inLoan.interestRate == outLoan.interestRate)
+            "The loan id must not change." using (inLoan.linearId == outLoan.linearId)
+
         }
     }
 
@@ -51,6 +65,7 @@ open class LoanPaymentContract : Contract{
     /**
      * This contract only implements one command for the loan repayment,
      * 1. Issue loan (occurs when a payment is made against the loan)
+     * A loan payment can only be issued
      */
     interface Commands : CommandData {
         class Issue : TypeOnlyCommandData(), Commands

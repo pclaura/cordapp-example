@@ -20,8 +20,8 @@ class LoanIssuanceTests {
     lateinit var network: MockNetwork
     lateinit var a: StartedMockNode
     lateinit var b: StartedMockNode
-    val value: Amount<Currency> = Amount(100, Currency.getInstance("EUR"))
-    val ir: BigDecimal = BigDecimal(10)
+    val borrowedAmount: Amount<Currency> = Amount(100, Currency.getInstance("EUR"))
+    val iR: BigDecimal = BigDecimal(1.25)
 
     @Before
     fun setup() {
@@ -39,8 +39,8 @@ class LoanIssuanceTests {
     }
 
     @Test
-    fun `flow rejects invalid LOANs`() { //Expected exception but not occurred as the LOAN is
-        val flow = LoanIssuance.InitiatorFlow(value, ir, b.info.singleIdentity())
+    fun `flow rejects invalid LOANs`() {
+        val flow = LoanIssuance.InitiatorFlow(borrowedAmount, iR, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
 
@@ -50,8 +50,8 @@ class LoanIssuanceTests {
 
     @Test
     fun `SignedTransaction returned by the flow is signed by the initiator`() {
-        val flow = LoanIssuance.InitiatorFlow(value, ir, b.info.singleIdentity())
-        val future = a.startFlow(flow) //TODO: Node a is he one that initiates
+        val flow = LoanIssuance.InitiatorFlow(borrowedAmount, iR, b.info.singleIdentity())
+        val future = a.startFlow(flow)
         network.runNetwork()
         val signedTx = future.getOrThrow()
 
@@ -60,7 +60,7 @@ class LoanIssuanceTests {
 
     @Test
     fun `flow records a transaction in both parties' transaction storages`() {
-        val flow = LoanIssuance.InitiatorFlow(value, ir, b.info.singleIdentity())
+        val flow = LoanIssuance.InitiatorFlow(borrowedAmount, iR, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
         val signedTx = future.getOrThrow()
@@ -73,24 +73,22 @@ class LoanIssuanceTests {
 
 
     @Test
-    fun `recorded transaction has no inputs and a single output, the input IOU`() {
-        val loanValue = value
-        val flow = LoanIssuance.InitiatorFlow(value, ir, b.info.singleIdentity())
+    fun `recorded transaction has no inputs and a single output, the input LOAN`() {
+        val flow = LoanIssuance.InitiatorFlow(borrowedAmount, iR, b.info.singleIdentity())
         val future = a.startFlow(flow)
         network.runNetwork()
         val signedTx = future.getOrThrow()
 
-        // We check the recorded transaction in both vaults.
-        for (node in listOf(a, b)) { //'node' es el iterador del for
-            val recordedTx = node.services.validatedTransactions.getTransaction(signedTx.id) //Tx firmada (puede ser nula)
-            val txOutputs = recordedTx!!.tx.outputs // (!!) == Null check
-            assert(txOutputs.size == 1) //Checks it has only one output
+        for (node in listOf(a, b)) {
+            val recordedTx = node.services.validatedTransactions.getTransaction(signedTx.id)
+            val txOutputs = recordedTx!!.tx.outputs
+            assert(txOutputs.size == 1)
 
             val recordedState = txOutputs[0].data as LoanState
-            assertEquals(recordedState.borrowedAmount, loanValue) //Checks the borrowed amount
-            assertEquals(recordedState.interestRate, ir) //Checks the interest rate
-            assertEquals(recordedState.lender, a.info.singleIdentity()) //Checks the lender identity
-            assertEquals(recordedState.borrower, b.info.singleIdentity()) //Checks the borrower identity
+            assertEquals(recordedState.borrowedAmount, borrowedAmount)
+            assertEquals(recordedState.interestRate, iR)
+            assertEquals(recordedState.lender, a.info.singleIdentity())
+            assertEquals(recordedState.borrower, b.info.singleIdentity())
         }
     }
 }
